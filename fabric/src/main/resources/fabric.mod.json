@@ -8,8 +8,8 @@
         "${mod_author}"
     ],
     "contact": {
-        "homepage": "https://fabricmc.net/",
-        "sources": "https://github.com/FabricMC/fabric-example-mod"
+        "homepage": "https://khazoda.com/#helpfulcampfires",
+        "sources": "https://github.com/Khazoda/helpful-campfires"
     },
     "license": "${license}",
     "icon": "${mod_id}.png",
