@@ -4,6 +4,7 @@ import com.khazoda.helpfulcampfires.HelpfulCampfiresMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -57,16 +58,6 @@ public class CampfireBlockEntityMixin {
     if (closestPlayer == null) return;
 
     BlockPos closestCampfire = helpfulcampfires$findClosestBlockInHearingRange(level, closestPlayer, CampfireBlock.class, 32);
-
-    // DEBUG: Change block to visually show which campfire is active
-    if (closestCampfire != null && closestCampfire.equals(pos)) {
-      level.setBlock(pos.above(), net.minecraft.world.level.block.Blocks.RED_WOOL.defaultBlockState(), 3);
-    } else {
-      if (level.getBlockState(pos.above()).is(net.minecraft.world.level.block.Blocks.RED_WOOL)) {
-        level.setBlock(pos.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
-      }
-    }
-
     if (closestCampfire == null || !closestCampfire.equals(pos)) return;
 
     long currentTime = level.getGameTime();
@@ -102,13 +93,32 @@ public class CampfireBlockEntityMixin {
 
   @Unique
   private static void helpfulcampfires$handleAmbientSounds(Level level, BlockPos pos, CampfireBlockEntityMixin mixin, long currentTime) {
-    if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY) return;
 
+    if (level instanceof ServerLevel serverLevel) {
+      if (level.getRandom().nextFloat() < 0.11F) {
+        if (mixin.helpfulcampfires$cachedEffectType == MobEffects.REGENERATION) {
+          // Normal campfire
+          double x = pos.getX() + 0.5;
+          double y = pos.getY() + 0.8;
+          double z = pos.getZ() + 0.5;
+          serverLevel.sendParticles(ParticleTypes.FLAME, x, y, z, 1, 0.2, 0.2, 0.2, 0.025);
+        } else {
+          // Soul campfire
+          double x = pos.getX() + 0.5;
+          double y = pos.getY() + 0.8;
+          double z = pos.getZ() + 0.5;
+          serverLevel.sendParticles(ParticleTypes.SOUL, x, y, z, 1, 0.3, 0.2, 0.3, 0.02);
+        }
+      }
+    }
+
+    if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY / 2) return; //Short delay before fire crackle begins
     if (currentTime >= mixin.helpfulcampfires$nextAmbientFire) {
       level.playSound(null, pos, HelpfulCampfiresMod.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
       mixin.helpfulcampfires$nextAmbientFire = currentTime + 180;
     }
 
+    if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY) return; //Normal delay before owl can hoot
     if (currentTime > mixin.helpfulcampfires$nextAmbientSound && level.getGameTime() > 13000) {
       mixin.helpfulcampfires$nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
       BlockPos soundPos = pos.offset(level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10));
@@ -143,6 +153,11 @@ public class CampfireBlockEntityMixin {
     if (currentTime - helpfulcampfires$lastGlobalHearingCheck > 40) {
       helpfulcampfires$lastGlobalHearingCheck = currentTime;
 
+      // Clean up map to prevent memory leaks
+      helpfulcampfires$playerCampfireMap.entrySet().removeIf(entry ->
+          entry.getKey().isRemoved() || !entry.getKey().isAlive()
+      );
+
       BlockPos currentClosest = helpfulcampfires$playerCampfireMap.get(player);
       BlockPos playerPos = player.blockPosition();
 
@@ -158,7 +173,8 @@ public class CampfireBlockEntityMixin {
         for (int y = -hearingRadius; y <= hearingRadius; y++) {
           for (int z = -hearingRadius; z <= hearingRadius; z++) {
             checkPos.set(playerPos.getX() + x, playerPos.getY() + y, playerPos.getZ() + z);
-            if (blockClass.isInstance(level.getBlockState(checkPos).getBlock())) {
+            BlockState blockState = level.getBlockState(checkPos);
+            if (blockClass.isInstance(blockState.getBlock()) && blockState.getValue(CampfireBlock.LIT)) {
               double distanceSq = playerPos.distSqr(checkPos);
               if (distanceSq < closestDistanceSq) {
                 closestDistanceSq = distanceSq;
