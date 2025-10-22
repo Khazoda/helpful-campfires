@@ -1,0 +1,22 @@
+{
+  "fire_crackling": {
+    "sounds": [
+      "helpfulcampfires:fire_crackling"
+    ]
+  },
+  "owl_hooting": {
+    "sounds": [
+      "helpfulcampfires:plushable_owl"
+    ]
+  },
+  "swell_in": {
+    "sounds": [
+      "helpfulcampfires:swell_in"
+    ]
+  },
+  "swell_out": {
+    "sounds": [
+      "helpfulcampfires:swell_out"
+    ]
+  }
+}

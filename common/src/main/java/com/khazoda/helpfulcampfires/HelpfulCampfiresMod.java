@@ -1,41 +1,27 @@
 package com.khazoda.helpfulcampfires;
 
 import com.khazoda.helpfulcampfires.platform.Services;
+import com.khazoda.helpfulcampfires.registry.Reggie;
+import com.khazoda.helpfulcampfires.registry.Reginald;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.item.Items;
 
-// This class is part of the common project meaning it is shared between all supported loaders.
-// Code written here can only
-// import and access the vanilla codebase, libraries used by vanilla, and optionally third party
-// libraries that provide
-// common compatible binaries. This means common code can not directly use loader specific
-// concepts such as Forge events
-// however it will be compatible with all supported mod loaders.
+import java.util.function.Supplier;
+
+import static com.khazoda.helpfulcampfires.Constants.ID;
+
 public class HelpfulCampfiresMod {
+  public static final Reginald REGISTRARS = new Reginald();
+  private static final Reggie<SoundEvent> SOUND_REGISTRAR = REGISTRARS.get(Registries.SOUND_EVENT);
 
-  // The loader specific projects are able to import and use any code from the common project.
-  // This allows you to
-  // write the majority of your code here and load it from your loader specific projects. This
-  // example has some
-  // code that gets invoked by the entry point of the loader specific projects.
+  public static final Supplier<SoundEvent> FIRE_CRACKLING = SOUND_REGISTRAR.register("fire_crackling", () -> SoundEvent.createVariableRangeEvent(ID("fire_crackling")));
+  public static final Supplier<SoundEvent> OWL_Hooting = SOUND_REGISTRAR.register("owl_hooting", () -> SoundEvent.createVariableRangeEvent(ID("owl_hooting")));
+  public static final Supplier<SoundEvent> SWELL_IN = SOUND_REGISTRAR.register("swell_in", () -> SoundEvent.createVariableRangeEvent(ID("swell_in")));
+  public static final Supplier<SoundEvent> SWELL_OUT = SOUND_REGISTRAR.register("swell_out", () -> SoundEvent.createVariableRangeEvent(ID("swell_out")));
+
   public static void init() {
-
-    Constants.LOG.info("Hello from Common init on {}! we are currently in a {} environment!",
-        Services.PLATFORM.getPlatformName(), Services.PLATFORM.getEnvironmentName());
-    Constants.LOG.info("The ID for diamonds is {}", BuiltInRegistries.ITEM.getKey(Items.DIAMOND));
-
-    // It is common for all supported loaders to provide a similar feature that can not be used
-    // directly in the
-    // common code. A popular way to get around this is using Java's built-in service loader
-    // feature to create
-    // your own abstraction layer. You can learn more about this in our provided services class.
-    // In this example
-    // we have an interface in the common code and use a loader specific implementation to
-    // delegate our call to
-    // the platform specific approach.
-    if (Services.PLATFORM.isModLoaded("helpfulcampfires")) {
-
-      Constants.LOG.info("Hello to helpfulcampfires");
-    }
+    if (Services.PLATFORM.isModLoaded("helpfulcampfires")) Constants.LOG.info("- Helpful Campfires Loaded -");
   }
 }

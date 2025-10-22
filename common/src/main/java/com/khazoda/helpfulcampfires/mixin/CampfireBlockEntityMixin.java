@@ -1,5 +1,6 @@
 package com.khazoda.helpfulcampfires.mixin;
 
+import com.khazoda.helpfulcampfires.HelpfulCampfiresMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.sounds.SoundEvents;
@@ -32,8 +33,8 @@ public class CampfireBlockEntityMixin {
 
   // Sound timing
   @Unique private static final int AMBIENT_SOUND_INTERVAL = 80;
-  @Unique private static final int MIN_SHORT_AMBIENT_DELAY = 60;
-  @Unique private static final int MAX_EXTRA_AMBIENT_DELAY = 40;
+  @Unique private static final int MIN_SHORT_AMBIENT_DELAY = 500;
+  @Unique private static final int MAX_EXTRA_AMBIENT_DELAY = 100;
 
   // Mixin State tracking
   @Unique private boolean helpfulcampfires$wasActive = false;
@@ -70,24 +71,24 @@ public class CampfireBlockEntityMixin {
       return;
     }
 
-    level.playSound(null, pos, hasPlayersInRange ? SoundEvents.CONDUIT_ACTIVATE : SoundEvents.CONDUIT_DEACTIVATE, SoundSource.BLOCKS, 1.0F, 1.0F);
+    level.playSound(null, pos, hasPlayersInRange ? HelpfulCampfiresMod.SWELL_IN.get() : HelpfulCampfiresMod.SWELL_OUT.get(), SoundSource.BLOCKS, 0.4F, 1.0F);
 
     mixin.helpfulcampfires$lastStatusChange = currentTime;
     mixin.helpfulcampfires$wasActive = hasPlayersInRange;
   }
 
-  /* Plays ambient sounds on the campfire */
+  /* Plays extra ambient sounds on the campfire */
   @Unique
   private static void helpfulcampfires$handleAmbientSounds(Level level, BlockPos pos, CampfireBlockEntityMixin mixin, long currentTime) {
     // Regular ambient sound
     if (currentTime % AMBIENT_SOUND_INTERVAL == 0) {
-      level.playSound(null, pos, SoundEvents.CONDUIT_AMBIENT, SoundSource.BLOCKS, 1.0F, 1.0F);
+      level.playSound(null, pos, HelpfulCampfiresMod.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
     }
 
     // Random short ambient sounds
-    if (currentTime > mixin.helpfulcampfires$nextAmbientSound) {
+    if (currentTime > mixin.helpfulcampfires$nextAmbientSound && level.getGameTime() > 13000) {
       mixin.helpfulcampfires$nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
-      level.playSound(null, pos, SoundEvents.CONDUIT_AMBIENT_SHORT, SoundSource.BLOCKS, 1.0F, 1.0F);
+      level.playSound(null, pos.above(8), HelpfulCampfiresMod.OWL_Hooting.get(), SoundSource.BLOCKS, 0.6F, 1.0F);
     }
   }
 
@@ -99,7 +100,7 @@ public class CampfireBlockEntityMixin {
     if (players.isEmpty()) return false;
 
     Holder<MobEffect> EFFECT_TYPE = MobEffects.REGENERATION;
-    if(level.getBlockState(pos).getBlock().defaultBlockState().getLightEmission() == 10) EFFECT_TYPE = MobEffects.WITHER; // Soul Campfires have a light level of 10
+    if(level.getBlockState(pos).getBlock().defaultBlockState().getLightEmission() == 10) EFFECT_TYPE = MobEffects.JUMP; // Soul Campfires have a light level of 10
 
     boolean hasPlayersInRange = false;
     for (Player player : players) {
