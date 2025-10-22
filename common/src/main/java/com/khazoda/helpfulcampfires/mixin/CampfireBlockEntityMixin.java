@@ -1,8 +1,10 @@
 package com.khazoda.helpfulcampfires.mixin;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.player.Player;
@@ -10,8 +12,10 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.CampfireBlock;
 import net.minecraft.world.level.block.entity.CampfireBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.phys.AABB;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -21,7 +25,7 @@ import java.util.List;
 
 @Mixin(CampfireBlockEntity.class)
 public class CampfireBlockEntityMixin {
-  // Effect Distances & Debounce time
+  // Effect Parameters
   @Unique private static final int EFFECT_RADIUS = 5;
   @Unique private static final int EFFECT_REMOVAL_RADIUS = EFFECT_RADIUS + 5;
   @Unique private static final int GRACE_PERIOD_TICKS = 10;
@@ -35,6 +39,7 @@ public class CampfireBlockEntityMixin {
   @Unique private boolean helpfulcampfires$wasActive = false;
   @Unique private long helpfulcampfires$lastStatusChange = 0L;
   @Unique private long helpfulcampfires$nextAmbientSound = 0L;
+
 
   /* This is the campfire's standard ticking method, runs when it isn't cooking also */
   @Inject(method = "cookTick", at = @At("TAIL"))
@@ -91,9 +96,10 @@ public class CampfireBlockEntityMixin {
   private static boolean helpfulcampfires$checkAndHandleEffects(Level level, BlockPos pos) {
     AABB effectArea = new AABB(pos).inflate(EFFECT_REMOVAL_RADIUS);
     List<Player> players = level.getEntitiesOfClass(Player.class, effectArea);
-    if (players.isEmpty()) {
-      return false;
-    }
+    if (players.isEmpty()) return false;
+
+    Holder<MobEffect> EFFECT_TYPE = MobEffects.REGENERATION;
+    if(level.getBlockState(pos).getBlock().defaultBlockState().getLightEmission() == 10) EFFECT_TYPE = MobEffects.WITHER; // Soul Campfires have a light level of 10
 
     boolean hasPlayersInRange = false;
     for (Player player : players) {
@@ -101,11 +107,11 @@ public class CampfireBlockEntityMixin {
 
       if (distance <= EFFECT_RADIUS * EFFECT_RADIUS) {
         hasPlayersInRange = true;
-        if (!player.hasEffect(MobEffects.REGENERATION)) {
-          player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 100, 1, true, false));
+        if (!player.hasEffect(EFFECT_TYPE)) {
+          player.addEffect(new MobEffectInstance(EFFECT_TYPE, 100, 1, true, false));
         }
       } else if (distance <= EFFECT_REMOVAL_RADIUS * EFFECT_REMOVAL_RADIUS) {
-        player.removeEffect(MobEffects.REGENERATION);
+        player.removeEffect(EFFECT_TYPE);
       }
     }
     return hasPlayersInRange;
