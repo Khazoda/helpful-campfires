@@ -3,6 +3,7 @@ package com.khazoda.helpfulcampfires.mixin;
 import com.khazoda.helpfulcampfires.HelpfulCampfiresMod;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -19,7 +20,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Mixin(CampfireBlockEntity.class)
 public class CampfireBlockEntityMixin {
@@ -32,6 +35,7 @@ public class CampfireBlockEntityMixin {
 
   @Unique private static final int EFFECT_RADIUS_SQ = EFFECT_RADIUS * EFFECT_RADIUS;
   @Unique private static final int EFFECT_REMOVAL_RADIUS_SQ = EFFECT_REMOVAL_RADIUS * EFFECT_REMOVAL_RADIUS;
+  @Unique private static long helpfulcampfires$lastGlobalHearingCheck = 0L;
 
   @Unique private boolean helpfulcampfires$wasActive = false;
   @Unique private long helpfulcampfires$lastStatusChange = 0L;
@@ -40,6 +44,7 @@ public class CampfireBlockEntityMixin {
   @Unique private long helpfulcampfires$nextAmbientFire = 0L;
   @Unique private Holder<MobEffect> helpfulcampfires$cachedEffectType = null;
   @Unique private int helpfulcampfires$cachedLightLevel = -1;
+  @Unique private static final Map<Player, BlockPos> helpfulcampfires$playerCampfireMap = new HashMap<>();
 
   @Inject(method = "cookTick", at = @At("TAIL"))
   private static void helpfulcampfires$runEveryTick(Level level, BlockPos pos, BlockState state, CampfireBlockEntity blockEntity, CallbackInfo ci) {
@@ -47,6 +52,22 @@ public class CampfireBlockEntityMixin {
 
     CampfireBlockEntityMixin mixin = (CampfireBlockEntityMixin) (Object) blockEntity;
     if (mixin == null) return;
+
+    Player closestPlayer = level.getNearestPlayer(pos.getX(), pos.getY(), pos.getZ(), 32, false);
+    if (closestPlayer == null) return;
+
+    BlockPos closestCampfire = helpfulcampfires$findClosestBlockInHearingRange(level, closestPlayer, CampfireBlock.class, 32);
+
+    // DEBUG: Change block to visually show which campfire is active
+    if (closestCampfire != null && closestCampfire.equals(pos)) {
+      level.setBlock(pos.above(), net.minecraft.world.level.block.Blocks.RED_WOOL.defaultBlockState(), 3);
+    } else {
+      if (level.getBlockState(pos.above()).is(net.minecraft.world.level.block.Blocks.RED_WOOL)) {
+        level.setBlock(pos.above(), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 3);
+      }
+    }
+
+    if (closestCampfire == null || !closestCampfire.equals(pos)) return;
 
     long currentTime = level.getGameTime();
     if (mixin.helpfulcampfires$firstLitTime == 0L)
@@ -65,7 +86,6 @@ public class CampfireBlockEntityMixin {
     int currentLightLevel = state.getLightEmission();
     if (this.helpfulcampfires$cachedEffectType == null || currentLightLevel != this.helpfulcampfires$cachedLightLevel) {
       this.helpfulcampfires$cachedLightLevel = currentLightLevel;
-      /* Soul Campfires have light level 10, normal have 15 */
       this.helpfulcampfires$cachedEffectType = (currentLightLevel == 10) ? MobEffects.JUMP : MobEffects.REGENERATION;
     }
   }
@@ -75,7 +95,7 @@ public class CampfireBlockEntityMixin {
     if (hasPlayersInRange == mixin.helpfulcampfires$wasActive || currentTime - mixin.helpfulcampfires$lastStatusChange <= GRACE_PERIOD_TICKS)
       return;
 
-    level.playSound(null, pos, hasPlayersInRange ? HelpfulCampfiresMod.SWELL_IN.get() : HelpfulCampfiresMod.SWELL_OUT.get(), SoundSource.BLOCKS, 0.4F, 1.0F);
+    level.playSound(null, pos, hasPlayersInRange ? HelpfulCampfiresMod.SWELL_IN.get() : HelpfulCampfiresMod.SWELL_OUT.get(), SoundSource.BLOCKS, 0.25F, 1.0F);
     mixin.helpfulcampfires$lastStatusChange = currentTime;
     mixin.helpfulcampfires$wasActive = hasPlayersInRange;
   }
@@ -86,7 +106,7 @@ public class CampfireBlockEntityMixin {
 
     if (currentTime >= mixin.helpfulcampfires$nextAmbientFire) {
       level.playSound(null, pos, HelpfulCampfiresMod.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
-      mixin.helpfulcampfires$nextAmbientFire = currentTime + 180; // 9 seconds in ticks
+      mixin.helpfulcampfires$nextAmbientFire = currentTime + 180;
     }
 
     if (currentTime > mixin.helpfulcampfires$nextAmbientSound && level.getGameTime() > 13000) {
@@ -115,6 +135,42 @@ public class CampfireBlockEntityMixin {
       }
     }
     return hasPlayersInRange;
+  }
+
+  @Unique
+  private static BlockPos helpfulcampfires$findClosestBlockInHearingRange(Level level, Player player, Class<?> blockClass, int hearingRadius) {
+    long currentTime = level.getGameTime();
+    if (currentTime - helpfulcampfires$lastGlobalHearingCheck > 40) {
+      helpfulcampfires$lastGlobalHearingCheck = currentTime;
+
+      BlockPos currentClosest = helpfulcampfires$playerCampfireMap.get(player);
+      BlockPos playerPos = player.blockPosition();
+
+      if (currentClosest != null && playerPos.distSqr(currentClosest) <= EFFECT_RADIUS_SQ) {
+        return currentClosest;
+      }
+
+      BlockPos closestPos = null;
+      double closestDistanceSq = Double.MAX_VALUE;
+      BlockPos.MutableBlockPos checkPos = new BlockPos.MutableBlockPos();
+
+      for (int x = -hearingRadius; x <= hearingRadius; x++) {
+        for (int y = -hearingRadius; y <= hearingRadius; y++) {
+          for (int z = -hearingRadius; z <= hearingRadius; z++) {
+            checkPos.set(playerPos.getX() + x, playerPos.getY() + y, playerPos.getZ() + z);
+            if (blockClass.isInstance(level.getBlockState(checkPos).getBlock())) {
+              double distanceSq = playerPos.distSqr(checkPos);
+              if (distanceSq < closestDistanceSq) {
+                closestDistanceSq = distanceSq;
+                closestPos = checkPos.immutable();
+              }
+            }
+          }
+        }
+      }
+      helpfulcampfires$playerCampfireMap.put(player, closestPos);
+    }
+    return helpfulcampfires$playerCampfireMap.get(player);
   }
 
   @Inject(method = "dowse", at = @At("HEAD"))
