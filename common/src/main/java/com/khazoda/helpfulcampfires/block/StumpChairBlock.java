@@ -12,7 +12,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class StumpChairBlock extends Block {
-  public static final Properties defaultProperties = Properties.of().sound(SoundType.WOOD).strength(0.1f).noOcclusion().pushReaction(PushReaction.DESTROY);
+  public static final Properties defaultProperties = Properties.of().sound(SoundType.WOOD).strength(0.4f).noOcclusion().pushReaction(PushReaction.DESTROY);
 
   public StumpChairBlock() {
     super(defaultProperties);
