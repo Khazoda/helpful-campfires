@@ -1,4 +1,4 @@
-package com.khazoda.helpfulcampfires.registry;
+package com.khazoda.helpfulcampfires.registry.helper;
 
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import net.minecraft.core.Registry;
@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.function.Supplier;
 
 import static com.khazoda.helpfulcampfires.Constants.ID;
-import static com.khazoda.helpfulcampfires.Constants.MOD_ID;
 
 /**
  * Registry handler for Minecraft registry types. Reggie is Reginald's little

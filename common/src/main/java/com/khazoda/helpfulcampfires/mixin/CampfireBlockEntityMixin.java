@@ -1,6 +1,7 @@
 package com.khazoda.helpfulcampfires.mixin;
 
-import com.khazoda.helpfulcampfires.HelpfulCampfiresMod;
+import com.khazoda.helpfulcampfires.HelpfulCampfiresCommon;
+import com.khazoda.helpfulcampfires.registry.SoundRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.particles.ParticleTypes;
@@ -86,7 +87,7 @@ public class CampfireBlockEntityMixin {
     if (hasPlayersInRange == mixin.helpfulcampfires$wasActive || currentTime - mixin.helpfulcampfires$lastStatusChange <= GRACE_PERIOD_TICKS)
       return;
 
-    level.playSound(null, pos, hasPlayersInRange ? HelpfulCampfiresMod.SWELL_IN.get() : HelpfulCampfiresMod.SWELL_OUT.get(), SoundSource.BLOCKS, 0.25F, 1.0F);
+    level.playSound(null, pos, hasPlayersInRange ? SoundRegistry.SWELL_IN.get() : SoundRegistry.SWELL_OUT.get(), SoundSource.BLOCKS, 0.25F, 1.0F);
     mixin.helpfulcampfires$lastStatusChange = currentTime;
     mixin.helpfulcampfires$wasActive = hasPlayersInRange;
   }
@@ -114,7 +115,7 @@ public class CampfireBlockEntityMixin {
 
     if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY / 2) return; //Short delay before fire crackle begins
     if (currentTime >= mixin.helpfulcampfires$nextAmbientFire) {
-      level.playSound(null, pos, HelpfulCampfiresMod.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
+      level.playSound(null, pos, SoundRegistry.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
       mixin.helpfulcampfires$nextAmbientFire = currentTime + 180;
     }
 
@@ -122,7 +123,7 @@ public class CampfireBlockEntityMixin {
     if (currentTime > mixin.helpfulcampfires$nextAmbientSound && level.getGameTime() > 13000) {
       mixin.helpfulcampfires$nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
       BlockPos soundPos = pos.offset(level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10));
-      level.playSound(null, soundPos, HelpfulCampfiresMod.OWL_Hooting.get(), SoundSource.BLOCKS, 0.6F, 1.0F);
+      level.playSound(null, soundPos, SoundRegistry.OWL_Hooting.get(), SoundSource.BLOCKS, 0.6F, 1.0F);
     }
   }
 

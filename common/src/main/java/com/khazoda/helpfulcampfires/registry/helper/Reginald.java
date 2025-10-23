@@ -1,6 +1,7 @@
-package com.khazoda.helpfulcampfires.registry;
+package com.khazoda.helpfulcampfires.registry.helper;
 
 import com.khazoda.helpfulcampfires.Constants;
+import com.khazoda.helpfulcampfires.HelpfulCampfiresCommon;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderGetter;
@@ -20,7 +21,7 @@ import java.util.Optional;
  * {@link Reggie}
  * instances for each Minecraft registry type (Items, Blocks, etc.).
  * <br/>
- * Reginald is instantiated in {@link com.khazoda.helpfulcampfires.HelpfulCampfiresMod} and that instance is called in all subsequent calls to Reggies
+ * Reginald is instantiated in {@link HelpfulCampfiresCommon} and that instance is called in all subsequent calls to Reggies
  * <br/>
  * This class
  * is used by
@@ -28,7 +29,7 @@ import java.util.Optional;
  * the creative tab.
  *
  * @see Reggie
- * @see com.khazoda.helpfulcampfires.HelpfulCampfiresMod
+ * @see HelpfulCampfiresCommon
  */
 public class Reginald {
   /** Map of registry keys to their corresponding Reggie instances */
@@ -72,14 +73,12 @@ public class Reginald {
   @SuppressWarnings("unchecked")
   public void registerAll() {
     for (var entry : registrars.entrySet()) {
-      Optional<Holder.Reference<Registry<Object>>> ref = ((HolderGetter<Registry<Object>>) BuiltInRegistries.REGISTRY)
-          .get((ResourceKey<Registry<Object>>) entry.getKey());
-      if (ref.isEmpty()) {
-        Constants.LOG.error("No registry found with the key {}",
-            entry.getKey());
+      Registry<Object> registry = (Registry<Object>) BuiltInRegistries.REGISTRY.get(entry.getKey().location());
+      if (registry == null) {
+        Constants.LOG.error("No registry found with the key {}", entry.getKey());
         continue;
       }
-      entry.getValue().registerAll(ref.get().value());
+      entry.getValue().registerAll(registry);
     }
   }
 }

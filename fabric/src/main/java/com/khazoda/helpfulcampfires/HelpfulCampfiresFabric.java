@@ -6,6 +6,7 @@ public class HelpfulCampfiresFabric implements ModInitializer {
 
   @Override
   public void onInitialize() {
-    HelpfulCampfiresMod.init();
+    HelpfulCampfiresCommon.init();
+    HelpfulCampfiresCommon.REGISTRARS.registerAll();
   }
 }
