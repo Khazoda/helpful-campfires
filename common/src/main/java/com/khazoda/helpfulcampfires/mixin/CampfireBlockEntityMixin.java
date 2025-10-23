@@ -151,7 +151,7 @@ public class CampfireBlockEntityMixin {
       data.nextAmbientFire = currentTime + 180;
     }
 
-    if (currentTime - data.firstLitTime >= INITIAL_SOUND_DELAY && currentTime > data.nextAmbientSound && level.getGameTime() > 13000) {
+    if (currentTime - data.firstLitTime >= INITIAL_SOUND_DELAY && currentTime > data.nextAmbientSound && level.isNight()) {
       data.nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
       BlockPos soundPos = pos.offset(level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10));
       level.playSound(null, soundPos, SoundRegistry.OWL_Hooting.get(), SoundSource.BLOCKS, 0.6F, 1.0F);

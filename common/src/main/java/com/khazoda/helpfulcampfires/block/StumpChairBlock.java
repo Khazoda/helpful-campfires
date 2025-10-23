@@ -35,10 +35,12 @@ public class StumpChairBlock extends Block {
     if (level.isClientSide()) return InteractionResult.SUCCESS;
 
     AABB searchArea = new AABB(pos).inflate(3);
-    // Check if there's already a chair with a mob passenger
+
+    // Check if there's already a chair associated with this stump
     var existingSeats = level.getEntitiesOfClass(ChairEntity.class, searchArea);
     for (ChairEntity seat : existingSeats) {
-      if (!seat.getPassengers().isEmpty()) {
+      // Only consider chairs that are centered on this specific stump
+      if (isChairEntityAtPos(seat, pos) && !seat.getPassengers().isEmpty()) {
         // Eject any mob passengers to make room for the player
         for (Entity passenger : seat.getPassengers()) {
           if (passenger instanceof Mob mob && !mob.isRemoved()) {
@@ -50,8 +52,10 @@ public class StumpChairBlock extends Block {
       }
     }
 
-    // Check for nearby leashed mobs to mount on stump
-    List<Mob> leashedMobs = level.getEntitiesOfClass(Mob.class, searchArea, mob -> mob.isLeashed() && mob.isAlive() && !mob.isPassenger());
+    // Check for nearby leashed mobs to mount on this stump
+    List<Mob> leashedMobs = level.getEntitiesOfClass(Mob.class, searchArea,
+        mob -> mob.isLeashed() && mob.isAlive() && !mob.isPassenger());
+
     if (!leashedMobs.isEmpty()) {
       Mob closestMob = null;
       double closestDistance = Double.MAX_VALUE;
@@ -80,7 +84,7 @@ public class StumpChairBlock extends Block {
       }
     }
 
-    // Normal player sitting (no mobs to mount or eject)
+    // Handle normal player sitting on this stump
     if (!player.isPassenger()) {
       ChairEntity seat = new ChairEntity(MainRegistry.CHAIR_ENTITY.get(), level);
       seat.setPos(pos.getX() + 0.5, pos.getY() + 0.45, pos.getZ() + 0.5);
@@ -88,7 +92,18 @@ public class StumpChairBlock extends Block {
         return player.startRiding(seat, true) ? InteractionResult.SUCCESS : InteractionResult.FAIL;
       }
     }
+
     return InteractionResult.PASS;
+  }
+
+
+  // heck if a chair entity is positioned on a specific stump (prevents weird incorrect stump selection on interaction)
+  private boolean isChairEntityAtPos(ChairEntity chair, BlockPos stumpPos) {
+    BlockPos chairPos = chair.blockPosition();
+    return chairPos.equals(stumpPos) ||
+        (chairPos.getX() == stumpPos.getX() + 0.5 &&
+            chairPos.getY() == stumpPos.getY() + 0.45 &&
+            chairPos.getZ() == stumpPos.getZ() + 0.5);
   }
 
   @Override
