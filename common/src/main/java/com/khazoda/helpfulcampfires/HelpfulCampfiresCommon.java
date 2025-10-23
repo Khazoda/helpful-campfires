@@ -9,6 +9,7 @@ public class HelpfulCampfiresCommon {
 
   public static void init() {
     MainRegistry.init();
-    if (Services.PLATFORM.isModLoaded("helpfulcampfires")) Constants.LOG.info("- Helpful Campfires Loaded -");
+    if (Services.PLATFORM.isModLoaded("helpfulcampfires"))
+      Constants.LOG.info("- Helpful Campfires Loaded -");
   }
 }

@@ -17,6 +17,9 @@
   "entrypoints": {
     "main": [
       "com.khazoda.helpfulcampfires.HelpfulCampfiresFabric"
+    ],
+    "client": [
+      "com.khazoda.helpfulcampfires.HelpfulCampfiresFabricClient"
     ]
   },
   "mixins": [

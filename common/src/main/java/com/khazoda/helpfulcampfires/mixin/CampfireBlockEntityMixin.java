@@ -1,6 +1,7 @@
 package com.khazoda.helpfulcampfires.mixin;
 
-import com.khazoda.helpfulcampfires.HelpfulCampfiresCommon;
+import com.khazoda.helpfulcampfires.Constants;
+import com.khazoda.helpfulcampfires.mixinutils.CampfireData;
 import com.khazoda.helpfulcampfires.registry.SoundRegistry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -22,9 +23,9 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Mixin(CampfireBlockEntity.class)
 public class CampfireBlockEntityMixin {
@@ -34,101 +35,131 @@ public class CampfireBlockEntityMixin {
   @Unique private static final int MIN_SHORT_AMBIENT_DELAY = 500;
   @Unique private static final int MAX_EXTRA_AMBIENT_DELAY = 100;
   @Unique private static final int INITIAL_SOUND_DELAY = 100;
+  @Unique private static final int HEARING_RADIUS = 8;
 
   @Unique private static final int EFFECT_RADIUS_SQ = EFFECT_RADIUS * EFFECT_RADIUS;
   @Unique private static final int EFFECT_REMOVAL_RADIUS_SQ = EFFECT_REMOVAL_RADIUS * EFFECT_REMOVAL_RADIUS;
-  @Unique private static long helpfulcampfires$lastGlobalHearingCheck = 0L;
 
-  @Unique private boolean helpfulcampfires$wasActive = false;
-  @Unique private long helpfulcampfires$lastStatusChange = 0L;
-  @Unique private long helpfulcampfires$nextAmbientSound = 0L;
-  @Unique private long helpfulcampfires$firstLitTime = 0L;
-  @Unique private long helpfulcampfires$nextAmbientFire = 0L;
-  @Unique private Holder<MobEffect> helpfulcampfires$cachedEffectType = null;
-  @Unique private int helpfulcampfires$cachedLightLevel = -1;
-  @Unique private static final Map<Player, BlockPos> helpfulcampfires$playerCampfireMap = new HashMap<>();
+  @Unique private static final Map<BlockPos, CampfireData> helpfulcampfires$campfireData = new ConcurrentHashMap<>();
+  @Unique private static final Map<Player, BlockPos> helpfulcampfires$playerCampfireMap = new ConcurrentHashMap<>();
+
+  @Unique private static long helpfulcampfires$lastGlobalHearingCheck = 0L;
 
   @Inject(method = "cookTick", at = @At("TAIL"))
   private static void helpfulcampfires$runEveryTick(Level level, BlockPos pos, BlockState state, CampfireBlockEntity blockEntity, CallbackInfo ci) {
     if (level.isClientSide() || !state.getValue(CampfireBlock.LIT)) return;
 
-    CampfireBlockEntityMixin mixin = (CampfireBlockEntityMixin) (Object) blockEntity;
-    if (mixin == null) return;
-
-    Player closestPlayer = level.getNearestPlayer(pos.getX(), pos.getY(), pos.getZ(), 32, false);
+    // Find the closest player to determine if this campfire should be active
+    Player closestPlayer = level.getNearestPlayer(pos.getX(), pos.getY(), pos.getZ(), HEARING_RADIUS, false);
     if (closestPlayer == null) return;
 
-    BlockPos closestCampfire = helpfulcampfires$findClosestBlockInHearingRange(level, closestPlayer, CampfireBlock.class, 32);
-    if (closestCampfire == null || !closestCampfire.equals(pos)) return;
+    // Only activate this campfire if it's the closest one to the player
+    BlockPos activeCampfire = helpfulcampfires$findActiveCampfireForPlayer(level, closestPlayer);
+    if (!pos.equals(activeCampfire)) return;
 
+    // This campfire is the active one for the closest player - proceed with effects
+    CampfireData data = helpfulcampfires$campfireData.computeIfAbsent(pos, k -> new CampfireData());
+    helpfulcampfires$updateCampfireType(state, data);
+    boolean hasPlayersInRange = helpfulcampfires$checkAndHandleEffects(level, pos, data.effectType);
     long currentTime = level.getGameTime();
-    if (mixin.helpfulcampfires$firstLitTime == 0L)
-      mixin.helpfulcampfires$firstLitTime = currentTime;
-
-    if (mixin.helpfulcampfires$cachedEffectType == null)
-      mixin.helpfulcampfires$determineCampfireType(state);
-    boolean hasPlayersInRange = mixin.helpfulcampfires$checkAndHandleEffects(level, pos, mixin.helpfulcampfires$cachedEffectType);
-
-    helpfulcampfires$handleStatusSounds(level, pos, mixin, hasPlayersInRange, currentTime);
-    if (hasPlayersInRange) helpfulcampfires$handleAmbientSounds(level, pos, mixin, currentTime);
+    helpfulcampfires$handleCampfireSoundsAndParticles(level, pos, data, hasPlayersInRange, currentTime);
   }
 
   @Unique
-  private void helpfulcampfires$determineCampfireType(BlockState state) {
+  private static BlockPos helpfulcampfires$findActiveCampfireForPlayer(Level level, Player player) {
+    long currentTime = level.getGameTime();
+
+    // Only update the player's campfire mapping every 2s to prevent lag
+    if (currentTime - helpfulcampfires$lastGlobalHearingCheck > 40) {
+      helpfulcampfires$lastGlobalHearingCheck = currentTime;
+
+      helpfulcampfires$playerCampfireMap.entrySet().removeIf(entry -> entry.getKey().isRemoved() || !entry.getKey().isAlive() || entry.getKey().level() != level // Player changed dimensions, remove them from the map
+      );
+
+      BlockPos currentActive = helpfulcampfires$playerCampfireMap.get(player);
+      BlockPos playerPos = player.blockPosition();
+
+      // If player is still close to their current active campfire, keep it
+      if (currentActive != null && playerPos.distSqr(currentActive) <= EFFECT_RADIUS_SQ) {
+        return currentActive;
+      }
+
+      // Search in a radius around the player for lit campfires & determine closest
+      BlockPos closestCampfire = null;
+      double closestDistanceSq = Double.MAX_VALUE;
+      BlockPos.MutableBlockPos checkPos = new BlockPos.MutableBlockPos();
+      for (int x = -HEARING_RADIUS; x <= HEARING_RADIUS; x++) {
+        for (int y = -HEARING_RADIUS; y <= HEARING_RADIUS; y++) {
+          for (int z = -HEARING_RADIUS; z <= HEARING_RADIUS; z++) {
+            checkPos.set(playerPos.getX() + x, playerPos.getY() + y, playerPos.getZ() + z);
+            BlockState blockState = level.getBlockState(checkPos);
+            if (blockState.getBlock() instanceof CampfireBlock && blockState.getValue(CampfireBlock.LIT)) {
+              double distanceSq = playerPos.distSqr(checkPos);
+              if (distanceSq < closestDistanceSq) {
+                closestDistanceSq = distanceSq;
+                closestCampfire = checkPos.immutable();
+              }
+            }
+          }
+        }
+      }
+      helpfulcampfires$playerCampfireMap.put(player, closestCampfire);
+      return closestCampfire;
+    }
+    // Return cached result
+    return helpfulcampfires$playerCampfireMap.get(player);
+  }
+
+  @Unique
+  private static void helpfulcampfires$updateCampfireType(BlockState state, CampfireData data) {
     int currentLightLevel = state.getLightEmission();
-    if (this.helpfulcampfires$cachedEffectType == null || currentLightLevel != this.helpfulcampfires$cachedLightLevel) {
-      this.helpfulcampfires$cachedLightLevel = currentLightLevel;
-      this.helpfulcampfires$cachedEffectType = (currentLightLevel == 10) ? MobEffects.JUMP : MobEffects.REGENERATION;
+    if (data.effectType == null || currentLightLevel != data.lightLevel) {
+      data.lightLevel = currentLightLevel;
+      data.effectType = (currentLightLevel == 10) ? MobEffects.JUMP : MobEffects.REGENERATION;
     }
   }
 
   @Unique
-  private static void helpfulcampfires$handleStatusSounds(Level level, BlockPos pos, CampfireBlockEntityMixin mixin, boolean hasPlayersInRange, long currentTime) {
-    if (hasPlayersInRange == mixin.helpfulcampfires$wasActive || currentTime - mixin.helpfulcampfires$lastStatusChange <= GRACE_PERIOD_TICKS)
-      return;
+  private static void helpfulcampfires$handleCampfireSoundsAndParticles(Level level, BlockPos pos, CampfireData data, boolean hasPlayersInRange, long currentTime) {
+    if (hasPlayersInRange != data.wasActive && currentTime - data.lastStatusChange > GRACE_PERIOD_TICKS) {
+      level.playSound(null, pos, hasPlayersInRange ? SoundRegistry.SWELL_IN.get() : SoundRegistry.SWELL_OUT.get(), SoundSource.BLOCKS, 0.25F, 1.0F);
+      data.lastStatusChange = currentTime;
+      data.wasActive = hasPlayersInRange;
+    }
 
-    level.playSound(null, pos, hasPlayersInRange ? SoundRegistry.SWELL_IN.get() : SoundRegistry.SWELL_OUT.get(), SoundSource.BLOCKS, 0.25F, 1.0F);
-    mixin.helpfulcampfires$lastStatusChange = currentTime;
-    mixin.helpfulcampfires$wasActive = hasPlayersInRange;
+    if (hasPlayersInRange) {
+      helpfulcampfires$handleAmbientEffects(level, pos, data, currentTime);
+    }
   }
 
   @Unique
-  private static void helpfulcampfires$handleAmbientSounds(Level level, BlockPos pos, CampfireBlockEntityMixin mixin, long currentTime) {
+  private static void helpfulcampfires$handleAmbientEffects(Level level, BlockPos pos, CampfireData data, long currentTime) {
+    if (level instanceof ServerLevel serverLevel && level.getRandom().nextFloat() < 0.11F) {
+      double x = pos.getX() + 0.5;
+      double y = pos.getY() + 0.8;
+      double z = pos.getZ() + 0.5;
 
-    if (level instanceof ServerLevel serverLevel) {
-      if (level.getRandom().nextFloat() < 0.11F) {
-        if (mixin.helpfulcampfires$cachedEffectType == MobEffects.REGENERATION) {
-          // Normal campfire
-          double x = pos.getX() + 0.5;
-          double y = pos.getY() + 0.8;
-          double z = pos.getZ() + 0.5;
-          serverLevel.sendParticles(ParticleTypes.FLAME, x, y, z, 1, 0.2, 0.2, 0.2, 0.025);
-        } else {
-          // Soul campfire
-          double x = pos.getX() + 0.5;
-          double y = pos.getY() + 0.8;
-          double z = pos.getZ() + 0.5;
-          serverLevel.sendParticles(ParticleTypes.SOUL, x, y, z, 1, 0.3, 0.2, 0.3, 0.02);
-        }
+      if (data.effectType == MobEffects.REGENERATION) {
+        serverLevel.sendParticles(ParticleTypes.FLAME, x, y, z, 1, 0.2, 0.2, 0.2, 0.025);
+      } else {
+        serverLevel.sendParticles(ParticleTypes.SOUL, x, y, z, 1, 0.3, 0.2, 0.3, 0.02);
       }
     }
 
-    if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY / 2) return; //Short delay before fire crackle begins
-    if (currentTime >= mixin.helpfulcampfires$nextAmbientFire) {
+    if (currentTime - data.firstLitTime >= INITIAL_SOUND_DELAY / 2 && currentTime >= data.nextAmbientFire) {
       level.playSound(null, pos, SoundRegistry.FIRE_CRACKLING.get(), SoundSource.BLOCKS, 0.8F, 1.0F);
-      mixin.helpfulcampfires$nextAmbientFire = currentTime + 180;
+      data.nextAmbientFire = currentTime + 180;
     }
 
-    if (currentTime - mixin.helpfulcampfires$firstLitTime < INITIAL_SOUND_DELAY) return; //Normal delay before owl can hoot
-    if (currentTime > mixin.helpfulcampfires$nextAmbientSound && level.getGameTime() > 13000) {
-      mixin.helpfulcampfires$nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
+    if (currentTime - data.firstLitTime >= INITIAL_SOUND_DELAY && currentTime > data.nextAmbientSound && level.getGameTime() > 13000) {
+      data.nextAmbientSound = currentTime + MIN_SHORT_AMBIENT_DELAY + (long) level.getRandom().nextInt(MAX_EXTRA_AMBIENT_DELAY);
       BlockPos soundPos = pos.offset(level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10), level.getRandom().nextIntBetweenInclusive(-10, 10));
       level.playSound(null, soundPos, SoundRegistry.OWL_Hooting.get(), SoundSource.BLOCKS, 0.6F, 1.0F);
     }
   }
 
   @Unique
-  private boolean helpfulcampfires$checkAndHandleEffects(Level level, BlockPos pos, Holder<MobEffect> effectType) {
+  private static boolean helpfulcampfires$checkAndHandleEffects(Level level, BlockPos pos, Holder<MobEffect> effectType) {
     AABB effectArea = new AABB(pos).inflate(EFFECT_REMOVAL_RADIUS);
     List<Player> players = level.getEntitiesOfClass(Player.class, effectArea);
     if (players.isEmpty()) return false;
@@ -136,7 +167,7 @@ public class CampfireBlockEntityMixin {
     boolean hasPlayersInRange = false;
     for (Player player : players) {
       double distanceSq = pos.distSqr(player.blockPosition());
-      if (distanceSq <= EFFECT_RADIUS_SQ) {
+      if (distanceSq <= EFFECT_RADIUS_SQ && effectType != null) {
         hasPlayersInRange = true;
         if (!player.hasEffect(effectType)) {
           player.addEffect(new MobEffectInstance(effectType, 100, 1, true, false));
@@ -148,52 +179,12 @@ public class CampfireBlockEntityMixin {
     return hasPlayersInRange;
   }
 
-  @Unique
-  private static BlockPos helpfulcampfires$findClosestBlockInHearingRange(Level level, Player player, Class<?> blockClass, int hearingRadius) {
-    long currentTime = level.getGameTime();
-    if (currentTime - helpfulcampfires$lastGlobalHearingCheck > 40) {
-      helpfulcampfires$lastGlobalHearingCheck = currentTime;
-
-      // Clean up map to prevent memory leaks
-      helpfulcampfires$playerCampfireMap.entrySet().removeIf(entry ->
-          entry.getKey().isRemoved() || !entry.getKey().isAlive()
-      );
-
-      BlockPos currentClosest = helpfulcampfires$playerCampfireMap.get(player);
-      BlockPos playerPos = player.blockPosition();
-
-      if (currentClosest != null && playerPos.distSqr(currentClosest) <= EFFECT_RADIUS_SQ) {
-        return currentClosest;
-      }
-
-      BlockPos closestPos = null;
-      double closestDistanceSq = Double.MAX_VALUE;
-      BlockPos.MutableBlockPos checkPos = new BlockPos.MutableBlockPos();
-
-      for (int x = -hearingRadius; x <= hearingRadius; x++) {
-        for (int y = -hearingRadius; y <= hearingRadius; y++) {
-          for (int z = -hearingRadius; z <= hearingRadius; z++) {
-            checkPos.set(playerPos.getX() + x, playerPos.getY() + y, playerPos.getZ() + z);
-            BlockState blockState = level.getBlockState(checkPos);
-            if (blockClass.isInstance(blockState.getBlock()) && blockState.getValue(CampfireBlock.LIT)) {
-              double distanceSq = playerPos.distSqr(checkPos);
-              if (distanceSq < closestDistanceSq) {
-                closestDistanceSq = distanceSq;
-                closestPos = checkPos.immutable();
-              }
-            }
-          }
-        }
-      }
-      helpfulcampfires$playerCampfireMap.put(player, closestPos);
-    }
-    return helpfulcampfires$playerCampfireMap.get(player);
-  }
-
   @Inject(method = "dowse", at = @At("HEAD"))
   private void helpfulcampfires$onDowse(CallbackInfo ci) {
-    this.helpfulcampfires$firstLitTime = 0L;
-    this.helpfulcampfires$nextAmbientFire = 0L;
-    this.helpfulcampfires$wasActive = false;
+    BlockPos pos = ((CampfireBlockEntity) (Object) this).getBlockPos();
+    helpfulcampfires$campfireData.remove(pos);
+    helpfulcampfires$playerCampfireMap.entrySet().removeIf(entry -> pos.equals(entry.getValue()));
   }
+
+
 }

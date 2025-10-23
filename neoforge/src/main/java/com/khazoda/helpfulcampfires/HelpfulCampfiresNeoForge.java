@@ -11,7 +11,6 @@ public class HelpfulCampfiresNeoForge {
   public HelpfulCampfiresNeoForge(IEventBus eventBus) {
     HelpfulCampfiresCommon.init();
     eventBus.addListener(this::onRegister);
-
   }
 
   private void onRegister(RegisterEvent event) {
